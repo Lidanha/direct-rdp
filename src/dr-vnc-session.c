@@ -107,6 +107,7 @@ vnc_got_cut_text (rfbClient *cl, const char *text, int len)
     dr_session_push_clipboard (DR_SESSION (SELF (cl)), utf8);
 }
 
+#ifdef HAVE_VNC_UTF8_CLIPBOARD
 static void
 vnc_got_cut_text_utf8 (rfbClient *cl, const char *text, int len)
 {
@@ -115,6 +116,7 @@ vnc_got_cut_text_utf8 (rfbClient *cl, const char *text, int len)
   if (g_utf8_validate (utf8, -1, NULL))
     dr_session_push_clipboard (DR_SESSION (SELF (cl)), utf8);
 }
+#endif
 
 static void
 send_clipboard (rfbClient *cl, const char *text)
@@ -122,8 +124,10 @@ send_clipboard (rfbClient *cl, const char *text)
   g_autofree char *latin1 = NULL;
   gsize len = 0;
 
+#ifdef HAVE_VNC_UTF8_CLIPBOARD
   if (SendClientCutTextUTF8 (cl, (char *) text, strlen (text)))
     return;
+#endif
   /* Classic VNC servers (including the Mac's) only take Latin-1 text. */
   latin1 = g_convert_with_fallback (text, -1, "ISO-8859-1", "UTF-8", "?", NULL, &len, NULL);
   if (latin1 != NULL)
@@ -310,7 +314,9 @@ dr_vnc_session_run (DrSession *session, GError **error)
   cl->FinishedFrameBufferUpdate = vnc_finished_update;
   cl->GotCursorShape = vnc_got_cursor;
   cl->GotXCutText = vnc_got_cut_text;
+#ifdef HAVE_VNC_UTF8_CLIPBOARD
   cl->GotXCutTextUTF8 = vnc_got_cut_text_utf8;
+#endif
   cl->GetPassword = vnc_get_password;
   cl->GetCredential = vnc_get_credential;
   cl->serverHost = strdup (dr_session_get_host (session));

@@ -8,6 +8,13 @@ deps = [
   dependency('libsecret-1'),
 ]
 
+# UTF-8 clipboard arrived in libvncclient 0.9.15; older ones only do Latin-1.
+c_args = []
+if meson.get_compiler('c').has_member('rfbClient', 'GotXCutTextUTF8',
+    prefix: '#include <rfb/rfbclient.h>', dependencies: deps[5])
+  c_args += '-DHAVE_VNC_UTF8_CLIPBOARD'
+endif
+
 executable('direct-rdp',
   'main.c',
   'dr-connection.c',
@@ -18,6 +25,7 @@ executable('direct-rdp',
   'dr-window.c',
   'dr-wol.c',
   dependencies: deps,
+  c_args: c_args,
   include_directories: include_directories('..'),
   install: true,
 )
