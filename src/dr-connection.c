@@ -15,6 +15,24 @@ static const SecretSchema password_schema = {
   }
 };
 
+static const char *const picture_names[] = { "automatic", "full", "adaptive" };
+
+const char *
+dr_picture_to_string (DrPicture picture)
+{
+  return picture_names[picture];
+}
+
+/* Unknown or missing names are Automatic. */
+DrPicture
+dr_picture_from_string (const char *string)
+{
+  for (guint i = 0; i < G_N_ELEMENTS (picture_names); i++)
+    if (g_strcmp0 (string, picture_names[i]) == 0)
+      return i;
+  return DR_PICTURE_AUTOMATIC;
+}
+
 DrConnection *
 dr_connection_new (void)
 {
@@ -38,7 +56,7 @@ dr_connection_copy (const DrConnection *conn)
   copy->domain = g_strdup (conn->domain);
   copy->mac = g_strdup (conn->mac);
   copy->last_used = conn->last_used;
-  copy->adaptive = conn->adaptive;
+  copy->picture = conn->picture;
   return copy;
 }
 
@@ -205,7 +223,7 @@ dr_connections_load (void)
       conn->last_used = g_key_file_get_int64 (file, groups[i], "last-used", NULL);
       g_free (protocol);
       protocol = get_string (file, groups[i], "picture");
-      conn->adaptive = g_strcmp0 (protocol, "adaptive") == 0;
+      conn->picture = dr_picture_from_string (protocol);
 
       if (conn->host == NULL)
         dr_connection_free (conn);
@@ -246,8 +264,8 @@ dr_connections_save (GPtrArray *connections)
       set_string (file, conn->id, "domain", conn->domain);
       set_string (file, conn->id, "mac", conn->mac);
       g_key_file_set_int64 (file, conn->id, "last-used", conn->last_used);
-      if (conn->adaptive)
-        g_key_file_set_string (file, conn->id, "picture", "adaptive");
+      if (conn->picture != DR_PICTURE_AUTOMATIC)
+        g_key_file_set_string (file, conn->id, "picture", dr_picture_to_string (conn->picture));
     }
 
   g_mkdir_with_parents (dir, 0700);

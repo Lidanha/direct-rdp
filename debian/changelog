@@ -1,3 +1,11 @@
+direct-rdp (0.6.0) resolute; urgency=medium
+
+  * Add an Automatic Mac picture, now the default: Full quality while the
+    screen is calm, Apple's Adaptive picture while much of it moves, so
+    video no longer stalls, and a lossless repaint once it settles.
+
+ -- Lidan H <lidanh@gmail.com>  Mon, 02 Nov 2026 18:21:22 +0200
+
 direct-rdp (0.5.0) resolute; urgency=medium
 
   * Have Macs send every change as it happens, as Apple's viewer does,

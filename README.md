@@ -8,9 +8,10 @@ over **RDP** and to Macs and Linux desktops over **VNC**, in one simple GNOME ap
 - RDP: dynamic resolution (the remote desktop follows the window size), HiDPI scaling,
   certificate checks, Network Level Authentication
 - VNC: plain VNC passwords and Mac Screen Sharing sign-in with your Mac account
-- Macs: smooth movement with the Mac sending every change as it happens, full
-  quality or Apple's own Adaptive picture for slow connections (a fraction of
-  the data), and copy and paste in both directions
+- Macs: smooth movement with the Mac sending every change as it happens; full
+  quality while the screen is calm and Apple's own Adaptive picture (a
+  fraction of the data) while video plays; and copy and paste in both
+  directions
 - Full screen with keyboard shortcuts sent to the remote computer
 - Send Ctrl+Alt+Del, Windows key, Alt+Tab and more from the keys menu
 - Wake on LAN for saved computers

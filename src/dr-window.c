@@ -348,7 +348,7 @@ view_start_with_password (View *view, const char *password)
   if (view->conn->protocol == DR_PROTOCOL_VNC)
     {
       view->session = dr_vnc_session_new (view->conn->host, dr_connection_get_port (view->conn));
-      dr_vnc_session_set_adaptive (DR_VNC_SESSION (view->session), view->conn->adaptive);
+      dr_vnc_session_set_picture (DR_VNC_SESSION (view->session), view->conn->picture);
     }
   else
     view->session = dr_rdp_session_new (view->conn->host, dr_connection_get_port (view->conn));
@@ -453,22 +453,21 @@ send_keys_action (GSimpleAction *action, GVariant *parameter, gpointer data)
     gtk_widget_grab_focus (view->display);
 }
 
-/* A Mac's picture: Full quality is lossless, Adaptive sends a fraction of the
- * data for slow connections. Kept with the saved computer. */
+/* A Mac's picture, kept with the saved computer. */
 static void
 quality_changed (GSimpleAction *action, GVariant *value, gpointer data)
 {
   View *view = data;
-  gboolean adaptive = g_str_equal (g_variant_get_string (value, NULL), "adaptive");
+  DrPicture picture = dr_picture_from_string (g_variant_get_string (value, NULL));
   DrConnection *saved = find_connection (view->window, view->conn->id);
 
   g_simple_action_set_state (action, value);
-  view->conn->adaptive = adaptive;
+  view->conn->picture = picture;
   if (DR_IS_VNC_SESSION (view->session))
-    dr_vnc_session_set_adaptive (DR_VNC_SESSION (view->session), adaptive);
-  if (saved && saved->adaptive != adaptive)
+    dr_vnc_session_set_picture (DR_VNC_SESSION (view->session), picture);
+  if (saved && saved->picture != picture)
     {
-      saved->adaptive = adaptive;
+      saved->picture = picture;
       dr_connections_save (view->window->connections);
     }
 }
@@ -570,10 +569,11 @@ open_connection (DrWindow *self, const DrConnection *conn)
   g_autoptr (GMenu) menu = g_menu_new ();
   g_autoptr (GSimpleActionGroup) actions = g_simple_action_group_new ();
   GtkEventController *motion;
+  g_autofree char *picture = g_strdup_printf ("'%s'", dr_picture_to_string (conn->picture));
   const GActionEntry entries[] = {
     { "send-keys", send_keys_action, "s", NULL, NULL },
     { "fullscreen", toggle_fullscreen_action, NULL, NULL, NULL },
-    { "quality", NULL, "s", conn->adaptive ? "'adaptive'" : "'full'", quality_changed },
+    { "quality", NULL, "s", picture, quality_changed },
   };
 
   view->window = self;
@@ -604,6 +604,7 @@ open_connection (DrWindow *self, const DrConnection *conn)
       g_autoptr (GMenu) quality_menu = g_menu_new ();
       g_autoptr (GMenu) section = g_menu_new ();
 
+      g_menu_append (section, "Automatic", "session.quality::automatic");
       g_menu_append (section, "Full Quality", "session.quality::full");
       g_menu_append (section, "Adaptive (Less Data)", "session.quality::adaptive");
       g_menu_append_section (quality_menu, "Mac Picture", G_MENU_MODEL (section));

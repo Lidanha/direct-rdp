@@ -26,6 +26,11 @@
   <url type="bugtracker">https://github.com/Lidanha/direct-rdp/issues</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.6.0" date="2026-11-02">
+      <description>
+        <p>Video on a Mac plays smoothly: the new Automatic picture, now the default, shows full quality while the screen is calm and switches to Apple's Adaptive picture while much of it moves, then repaints sharply once it settles.</p>
+      </description>
+    </release>
     <release version="0.5.0" date="2026-11-02">
       <description>
         <p>Macs keep up with movement: the Mac now sends every change as soon as it happens, as Apple's own viewer does. Macs show in full quality by default, and the new Picture Quality menu switches to Adaptive when the connection is slow.</p>

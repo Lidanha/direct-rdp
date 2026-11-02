@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #pragma once
 
+#include "dr-connection.h"
 #include "dr-session.h"
 
 G_BEGIN_DECLS
@@ -9,6 +10,6 @@ G_BEGIN_DECLS
 G_DECLARE_FINAL_TYPE (DrVncSession, dr_vnc_session, DR, VNC_SESSION, DrSession)
 
 DrSession *dr_vnc_session_new (const char *host, guint port);
-void dr_vnc_session_set_adaptive (DrVncSession *self, gboolean adaptive);
+void dr_vnc_session_set_picture (DrVncSession *self, DrPicture picture);
 
 G_END_DECLS

@@ -7,7 +7,10 @@
 
 #include "dr-apple-adaptive.h"
 
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <rfb/rfbclient.h>
+#include <sys/socket.h>
 #include <zlib.h>
 
 struct _DrVncSession
@@ -21,8 +24,14 @@ struct _DrVncSession
   gboolean asked_credentials;
   gboolean apple; /* a Mac's Screen Sharing, which has its own clipboard messages */
   DrAppleAdaptive *adaptive; /* the Mac's Adaptive picture */
-  int want_adaptive;         /* atomic: Adaptive rather than Full quality */
+  int picture;               /* atomic DrPicture */
   gboolean is_adaptive;      /* what the Mac was last asked for */
+  gboolean busy;             /* Automatic: much of the screen keeps moving */
+  gint64 motion_since;       /* start of the second being measured */
+  guint64 motion_bytes;      /* bytes received by then */
+  gint64 motion_area;        /* pixels changed since */
+  int busy_seconds, calm_seconds;
+  gint64 settled_at;         /* back in Full, whose first repaint is no motion */
   int armed_width, armed_height;
   guint updates;
   gint64 updates_since;
@@ -80,6 +89,7 @@ vnc_got_update (rfbClient *cl, int x, int y, int w, int h)
   self->dirty_y1 = MIN (self->dirty_y1, y);
   self->dirty_x2 = MAX (self->dirty_x2, x + w);
   self->dirty_y2 = MAX (self->dirty_y2, y + h);
+  self->motion_area += (gint64) w * h;
 }
 
 static void
@@ -332,14 +342,83 @@ apple_handle_message (rfbClient *cl, rfbServerToClientMsg *message)
     }
 }
 
+static gboolean
+apple_want_adaptive (DrVncSession *self)
+{
+  DrPicture picture = g_atomic_int_get (&self->picture);
+
+  return picture == DR_PICTURE_ADAPTIVE || (picture == DR_PICTURE_AUTOMATIC && self->busy);
+}
+
 /* Lists Adaptive's tiles or Full quality's zlib first. Switching later is
  * safe: the Mac keeps a deflate stream per encoding, and never sends the ZRLE
  * that shares libvncclient's zlib stream. */
 static void
 apple_set_quality (DrVncSession *self, rfbClient *cl)
 {
-  self->is_adaptive = g_atomic_int_get (&self->want_adaptive);
+  self->is_adaptive = apple_want_adaptive (self);
   cl->appData.encodingsString = self->is_adaptive ? "raw" : "zlib raw";
+}
+
+static guint64
+received_bytes (rfbClient *cl)
+{
+  struct tcp_info info = { 0 };
+  socklen_t len = sizeof info;
+
+  if (getsockopt (cl->sock, IPPROTO_TCP, TCP_INFO, &info, &len) != 0)
+    return 0;
+  return info.tcpi_bytes_received;
+}
+
+/* Automatic quality, measured a second at a time. A Mac sends lossless video
+ * at only about 10 MB/s, so a picture that keeps moving falls further and
+ * further behind in Full quality: two seconds of over 4 MB/s switch to
+ * Adaptive, as Apple's viewer does. Two seconds with less than a quarter of
+ * the screen changing switch back, and the repaint that follows in Full
+ * quality is not counted as motion. */
+static void
+apple_watch_motion (DrVncSession *self, rfbClient *cl)
+{
+  gint64 now = g_get_monotonic_time ();
+  guint64 bytes = received_bytes (cl);
+  gint64 elapsed = now - self->motion_since;
+
+  if (elapsed < G_USEC_PER_SEC)
+    return;
+
+  if (self->motion_since != 0 && now - self->settled_at > 3 * G_USEC_PER_SEC)
+    {
+      double rate = (bytes - self->motion_bytes) * (double) G_USEC_PER_SEC / elapsed;
+      double screens = self->motion_area * (double) G_USEC_PER_SEC / elapsed /
+                       ((double) cl->width * cl->height);
+
+      if (!self->busy)
+        {
+          self->busy_seconds = rate > 4e6 ? self->busy_seconds + 1 : 0;
+          if (self->busy_seconds >= 2)
+            {
+              g_debug ("VNC: motion at %.1f MB/s, Adaptive picture", rate / 1e6);
+              self->busy = TRUE;
+              self->calm_seconds = 0;
+            }
+        }
+      else
+        {
+          self->calm_seconds = screens < 0.25 ? self->calm_seconds + 1 : 0;
+          if (self->calm_seconds >= 2)
+            {
+              g_debug ("VNC: still, Full quality picture");
+              self->busy = FALSE;
+              self->busy_seconds = 0;
+              self->settled_at = now;
+            }
+        }
+    }
+
+  self->motion_since = now;
+  self->motion_bytes = bytes;
+  self->motion_area = 0;
 }
 
 /* Apple's viewer arms AutoFrameBufferUpdate at 0, so the Mac pushes every
@@ -702,10 +781,15 @@ dr_vnc_session_run (DrSession *session, GError **error)
           dr_input_event_free (event);
         }
 
-      if (self->apple && g_atomic_int_get (&self->want_adaptive) != self->is_adaptive)
+      if (self->apple && g_atomic_int_get (&self->picture) == DR_PICTURE_AUTOMATIC)
+        apple_watch_motion (self, cl);
+      if (self->apple && apple_want_adaptive (self) != self->is_adaptive)
         {
           apple_set_quality (self, cl);
           SetFormatAndEncodings (cl);
+          /* What Adaptive left is repainted losslessly. */
+          if (!self->is_adaptive)
+            SendFramebufferUpdateRequest (cl, 0, 0, cl->width, cl->height, FALSE);
         }
       if (self->apple && (cl->width != self->armed_width || cl->height != self->armed_height))
         apple_arm (self, cl);
@@ -758,11 +842,11 @@ dr_vnc_session_init (DrVncSession *self)
 }
 
 void
-dr_vnc_session_set_adaptive (DrVncSession *self, gboolean adaptive)
+dr_vnc_session_set_picture (DrVncSession *self, DrPicture picture)
 {
   g_return_if_fail (DR_IS_VNC_SESSION (self));
 
-  g_atomic_int_set (&self->want_adaptive, adaptive);
+  g_atomic_int_set (&self->picture, picture);
 }
 
 DrSession *

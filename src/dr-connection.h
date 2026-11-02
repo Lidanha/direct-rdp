@@ -11,6 +11,18 @@ typedef enum
   DR_PROTOCOL_VNC,
 } DrProtocol;
 
+/* A Mac's picture: Full quality is lossless, Adaptive sends a fraction of
+ * the data, and Automatic uses Adaptive while much of the screen moves. */
+typedef enum
+{
+  DR_PICTURE_AUTOMATIC,
+  DR_PICTURE_FULL,
+  DR_PICTURE_ADAPTIVE,
+} DrPicture;
+
+const char *dr_picture_to_string (DrPicture picture);
+DrPicture dr_picture_from_string (const char *string);
+
 typedef struct
 {
   char *id;
@@ -21,7 +33,7 @@ typedef struct
   char *username;
   char *domain;
   char *mac;      /* for Wake on LAN */
-  gboolean adaptive; /* Macs: Apple's Adaptive picture instead of Full quality */
+  DrPicture picture; /* Macs */
   gint64 last_used;
 } DrConnection;
 
