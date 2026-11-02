@@ -26,6 +26,11 @@
   <url type="bugtracker">https://github.com/Lidanha/direct-rdp/issues</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.6.3" date="2026-11-02">
+      <description>
+        <p>The mouse's Back and Forward buttons work on a Mac, and Back on other VNC computers.</p>
+      </description>
+    </release>
     <release version="0.6.2" date="2026-11-02">
       <description>
         <p>The scroll wheel and touchpad scroll a Mac as far as they would locally, instead of a couple of pixels a notch.</p>

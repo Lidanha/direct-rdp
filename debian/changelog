@@ -1,3 +1,10 @@
+direct-rdp (0.6.3) resolute; urgency=medium
+
+  * Send the mouse's Back and Forward buttons to Macs, and Back to other
+    VNC computers.
+
+ -- Lidan H <lidanh@gmail.com>  Mon, 02 Nov 2026 22:25:00 +0200
+
 direct-rdp (0.6.2) resolute; urgency=medium
 
   * Scroll a Mac by a real distance with Apple's own scroll message, as

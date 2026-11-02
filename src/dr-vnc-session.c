@@ -629,6 +629,13 @@ vnc_get_credential (rfbClient *cl, int type)
   return credential;
 }
 
+/* RFB has no Back and Forward buttons, and X servers take bit 7 as Back. A
+ * Mac posts a wheel bit together with another button as Back (wheel up) or
+ * Forward (wheel down), plus that button; with bit 7 that is the Mac's eighth
+ * button, which applications leave alone. Measured on macOS 26. */
+#define APPLE_BACK (rfbWheelUpMask | 0x80)
+#define APPLE_FORWARD (rfbWheelDownMask | 0x80)
+
 /* A Mac scrolls only about two pixels for a wheel button of the pointer
  * event, so like Apple's viewer this sends the distance in Apple's own
  * scroll-wheel event: message 0x17, kind 11, with deltas in lines, in lines
@@ -697,8 +704,12 @@ send_input (DrVncSession *self, const DrInputEvent *e)
         case GDK_BUTTON_PRIMARY: bit = rfbButton1Mask; break;
         case GDK_BUTTON_MIDDLE: bit = rfbButton2Mask; break;
         case GDK_BUTTON_SECONDARY: bit = rfbButton3Mask; break;
+        case 8: bit = self->apple ? APPLE_BACK : 0x80; break;
+        case 9: bit = self->apple ? APPLE_FORWARD : 0; break;
         default: return;
         }
+      if (bit == 0)
+        return;
       if (e->down)
         self->buttons |= bit;
       else
