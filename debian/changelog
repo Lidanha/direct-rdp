@@ -1,3 +1,11 @@
+direct-rdp (0.6.1) resolute; urgency=medium
+
+  * Keep a Mac smooth after its display sleeps: it stopped sending every
+    change as it happens once its display had turned off, until you
+    reconnected.
+
+ -- Lidan H <lidanh@gmail.com>  Mon, 02 Nov 2026 20:25:00 +0200
+
 direct-rdp (0.6.0) resolute; urgency=medium
 
   * Add an Automatic Mac picture, now the default: Full quality while the

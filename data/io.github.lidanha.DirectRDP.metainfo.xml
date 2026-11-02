@@ -26,6 +26,11 @@
   <url type="bugtracker">https://github.com/Lidanha/direct-rdp/issues</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.6.1" date="2026-11-02">
+      <description>
+        <p>A Mac stays smooth after its display sleeps: it stopped sending every change as it happens once its display had turned off, until you reconnected.</p>
+      </description>
+    </release>
     <release version="0.6.0" date="2026-11-02">
       <description>
         <p>Video on a Mac plays smoothly: the new Automatic picture, now the default, shows full quality while the screen is calm and switches to Apple's Adaptive picture while much of it moves, then repaints sharply once it settles.</p>

@@ -32,7 +32,7 @@ struct _DrVncSession
   gint64 motion_area;        /* pixels changed since */
   int busy_seconds, calm_seconds;
   gint64 settled_at;         /* back in Full, whose first repaint is no motion */
-  int armed_width, armed_height;
+  gboolean armed;            /* AutoFrameBufferUpdate covers the screen */
   guint updates;
   gint64 updates_since;
   gboolean cancelled;
@@ -72,9 +72,13 @@ vnc_error (const char *format, ...)
   g_debug ("VNC: %s", (const char *) g_private_get (&last_error));
 }
 
+/* Also called when the screen changes size. A Mac announces its size again
+ * when its display goes to sleep, and stops pushing updates until it is
+ * armed again, even when the size is the same. */
 static rfbBool
 vnc_malloc_framebuffer (rfbClient *cl)
 {
+  SELF (cl)->armed = FALSE;
   free (cl->frameBuffer);
   cl->frameBuffer = calloc ((size_t) cl->width * cl->height, 4);
   return cl->frameBuffer != NULL;
@@ -424,7 +428,8 @@ apple_watch_motion (DrVncSession *self, rfbClient *cl)
 /* Apple's viewer arms AutoFrameBufferUpdate at 0, so the Mac pushes every
  * change of the screen as soon as it captures it. Answering requests alone,
  * a Mac's own display draws a few updates a second while a window moves.
- * The arming covers the screen, and is sent again when its size changes. */
+ * The arming covers the screen, and is sent again whenever the Mac announces
+ * its size, which it does when its display sleeps. */
 static void
 apple_arm (DrVncSession *self, rfbClient *cl)
 {
@@ -436,8 +441,7 @@ apple_arm (DrVncSession *self, rfbClient *cl)
   };
 
   WriteToRFBServer (cl, (const char *) message, sizeof message);
-  self->armed_width = cl->width;
-  self->armed_height = cl->height;
+  self->armed = TRUE;
 }
 
 /* Apple's picture
@@ -791,7 +795,7 @@ dr_vnc_session_run (DrSession *session, GError **error)
           if (!self->is_adaptive)
             SendFramebufferUpdateRequest (cl, 0, 0, cl->width, cl->height, FALSE);
         }
-      if (self->apple && (cl->width != self->armed_width || cl->height != self->armed_height))
+      if (self->apple && !self->armed)
         apple_arm (self, cl);
 
       status = WaitForMessage (cl, 10000);
