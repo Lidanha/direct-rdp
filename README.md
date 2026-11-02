@@ -18,7 +18,7 @@ over **RDP** and to Macs and Linux desktops over **VNC**, in one simple GNOME ap
 ### From the PPA (Ubuntu 24.04 and later)
 
 ```sh
-sudo add-apt-repository ppa:lidanha/direct-rdp
+sudo add-apt-repository ppa:lidanh/direct-rdp
 sudo apt install direct-rdp
 ```
 
