@@ -8,7 +8,7 @@
 #include "dr-apple-adaptive.h"
 
 #include <netinet/in.h>
-#include <netinet/tcp.h>
+#include <linux/tcp.h> /* tcpi_bytes_received, missing from older glibc */
 #include <rfb/rfbclient.h>
 #include <sys/socket.h>
 #include <zlib.h>
