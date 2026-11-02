@@ -26,6 +26,11 @@
   <url type="bugtracker">https://github.com/Lidanha/direct-rdp/issues</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.4.0" date="2026-11-02">
+      <description>
+        <p>Macs now send their screen in Apple's own Adaptive picture format, which uses a fraction of the data of plain VNC and keeps up much better with movement.</p>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-11-02">
       <description>
         <p>Copy and paste now works in both directions with Macs, using the Mac's own Screen Sharing clipboard.</p>

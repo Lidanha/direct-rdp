@@ -1,5 +1,5 @@
 project('direct-rdp', 'c',
-  version: '0.3.0',
+  version: '0.4.0',
   license: 'GPL-3.0-or-later',
   meson_version: '>= 0.62',
   default_options: ['c_std=gnu11', 'warning_level=2', 'buildtype=debugoptimized'],
@@ -22,6 +22,7 @@ add_project_arguments(
 
 subdir('src')
 subdir('data')
+subdir('tests')
 
 gnome = import('gnome')
 gnome.post_install(gtk_update_icon_cache: true, update_desktop_database: true)

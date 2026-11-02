@@ -5,6 +5,8 @@
  */
 #include "dr-vnc-session.h"
 
+#include "dr-apple-adaptive.h"
+
 #include <rfb/rfbclient.h>
 #include <zlib.h>
 
@@ -18,6 +20,7 @@ struct _DrVncSession
   int dirty_x1, dirty_y1, dirty_x2, dirty_y2;
   gboolean asked_credentials;
   gboolean apple; /* a Mac's Screen Sharing, which has its own clipboard messages */
+  DrAppleAdaptive *adaptive; /* the Mac's Adaptive picture */
   gboolean cancelled;
 };
 
@@ -31,7 +34,17 @@ static GPrivate last_error = G_PRIVATE_INIT (g_free);
 static void
 vnc_log (const char *format, ...)
 {
-  /* libvncclient is chatty; keep it quiet */
+  g_autofree char *message = NULL;
+  va_list args;
+
+  /* libvncclient is chatty, so only with debug messages on */
+  if (!g_log_writer_default_would_drop (G_LOG_LEVEL_DEBUG, G_LOG_DOMAIN))
+    {
+      va_start (args, format);
+      message = g_strdup_vprintf (format, args);
+      va_end (args);
+      g_debug ("VNC: %s", g_strstrip (message));
+    }
 }
 
 static void
@@ -42,6 +55,7 @@ vnc_error (const char *format, ...)
   va_start (args, format);
   g_private_replace (&last_error, g_strstrip (g_strdup_vprintf (format, args)));
   va_end (args);
+  g_debug ("VNC: %s", (const char *) g_private_get (&last_error));
 }
 
 static rfbBool
@@ -302,7 +316,56 @@ apple_handle_message (rfbClient *cl, rfbServerToClientMsg *message)
     }
 }
 
+/* Apple's picture
+ *
+ * A Mac codes every rectangle in the first of zlib, ZRLE and its own codecs
+ * that the viewer lists, and keeps the last of zlib and ZRLE as a lossless one.
+ * Its own viewer's Adaptive quality lists the 8×8 tiles first, which send a
+ * changed area coarsely at once and refine it after, a fraction of ZRLE's
+ * size; dr-apple-adaptive.c decodes them. libvncclient lists extension
+ * encodings after its own, so a Mac session lists only raw of those
+ * (vnc_get_credential) and lets this list put the tiles ahead of ZRLE.
+ * DR_APPLE_QUALITY=full asks for Full quality's lossless zlib instead.
+ * Anything else ignores 0x3f3.
+ */
+static int apple_encodings[] = { DR_APPLE_ADAPTIVE_ENCODING, rfbEncodingZRLE, 0 };
+
+static rfbBool
+apple_handle_encoding (rfbClient *cl, rfbFramebufferUpdateRectHeader *rect)
+{
+  DrVncSession *self = SELF (cl);
+  g_autoptr (GError) error = NULL;
+  g_autofree guint8 *body = NULL;
+  guint32 len;
+
+  if (self == NULL || rect->encoding != DR_APPLE_ADAPTIVE_ENCODING)
+    return FALSE;
+
+  if (!ReadFromRFBServer (cl, (char *) &len, sizeof len))
+    return FALSE;
+  len = GUINT32_FROM_BE (len);
+  if (len == 0 || len > 100000000)
+    {
+      g_warning ("VNC: Apple tiles of %u bytes", len);
+      return FALSE;
+    }
+  body = g_malloc (len);
+  if (!ReadFromRFBServer (cl, (char *) body, len))
+    return FALSE;
+
+  if (self->adaptive == NULL)
+    self->adaptive = dr_apple_adaptive_new ();
+  /* The Mac codes the next update against what its viewer made of this one,
+   * so a rectangle that does not decode only spoils its own area. */
+  if (!dr_apple_adaptive_decode (self->adaptive, (guint32 *) cl->frameBuffer, cl->width, cl->height,
+                                 rect->r.x, rect->r.y, rect->r.w, rect->r.h, body, len, &error))
+    g_debug ("VNC: Apple tiles: %s", error->message);
+  return TRUE;
+}
+
 static rfbClientProtocolExtension apple_extension = {
+  .encodings = apple_encodings,
+  .handleEncoding = apple_handle_encoding,
   .handleMessage = apple_handle_message,
 };
 
@@ -423,6 +486,11 @@ vnc_get_credential (rfbClient *cl, int type)
 
   if (type != rfbCredentialTypeUser)
     return NULL;
+  /* A Mac signs in before the encodings are sent, which is the time to ask
+   * for its own picture: libvncclient's zlib and ZRLE share one inflate stream,
+   * so switching from ZRLE later would decode zlib on the wrong stream. */
+  if (cl->authScheme == rfbARD)
+    cl->appData.encodingsString = g_strcmp0 (g_getenv ("DR_APPLE_QUALITY"), "full") == 0 ? "zlib raw" : "raw";
   if (!get_credentials (SELF (cl), TRUE, &username, &password))
     return NULL;
 
@@ -593,6 +661,7 @@ dr_vnc_session_run (DrSession *session, GError **error)
     }
 
   self->client = NULL;
+  g_clear_pointer (&self->adaptive, dr_apple_adaptive_free);
   free (cl->frameBuffer);
   cl->frameBuffer = NULL;
   rfbClientCleanup (cl);

@@ -18,6 +18,7 @@ endif
 
 executable('direct-rdp',
   'main.c',
+  'dr-apple-adaptive.c',
   'dr-connection.c',
   'dr-display.c',
   'dr-rdp-session.c',

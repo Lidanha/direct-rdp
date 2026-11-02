@@ -1,3 +1,11 @@
+direct-rdp (0.4.0) resolute; urgency=medium
+
+  * Show Macs with Apple's own Adaptive picture encoding: 8x8 tiles that
+    send a changed area coarsely at once and refine it after, a fraction of
+    the data of plain VNC.
+
+ -- Lidan H <lidanh@gmail.com>  Mon, 02 Nov 2026 17:49:27 +0200
+
 direct-rdp (0.3.0) resolute; urgency=medium
 
   * Copy and paste with Macs in both directions, using Apple's Screen
