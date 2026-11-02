@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.lidanha.DirectRDP</id>
+  <name>Direct RDP &amp; VNC</name>
+  <summary>Connect to your own computers over RDP and VNC</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="io.github.lidanha">
+    <name>Lidan</name>
+  </developer>
+  <description>
+    <p>
+      A plain remote desktop client. Type the computer's address, sign in, and you're in.
+      There's no account, no relay server and nothing to install on the other computer.
+    </p>
+    <ul>
+      <li>RDP for Windows PCs, GNOME Remote Desktop and xrdp</li>
+      <li>VNC for Macs (sign in with the Mac account) and other VNC servers</li>
+      <li>The remote desktop resizes to fit the window</li>
+      <li>Passwords are kept in the system keyring</li>
+      <li>Wake on LAN, Ctrl+Alt+Del and full screen</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.lidanha.DirectRDP.desktop</launchable>
+  <url type="homepage">https://github.com/Lidanha/direct-rdp</url>
+  <url type="bugtracker">https://github.com/Lidanha/direct-rdp/issues</url>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-11-02">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

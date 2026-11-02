@@ -1,0 +1,15 @@
+.TH DIRECT-RDP 1 "November 2026" "direct-rdp 0.1.0" "User Commands"
+.SH NAME
+direct-rdp \- remote desktop client for RDP and VNC
+.SH SYNOPSIS
+.B direct-rdp
+[\fIrdp://host[:port]\fR | \fIvnc://host[:port]\fR]
+.SH DESCRIPTION
+.B direct-rdp
+connects to Windows computers over RDP and to Macs and Linux desktops over VNC.
+Saved computers are kept in \fI~/.config/direct-rdp/connections.ini\fR and
+passwords in the desktop keyring.
+.PP
+When given an \fBrdp://\fR or \fBvnc://\fR address it connects to it straight away.
+.SH SEE ALSO
+https://github.com/Lidanha/direct-rdp

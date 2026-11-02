@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Direct RDP & VNC
+GenericName=Remote Desktop
+Comment=Connect to Windows, Linux and Mac computers over RDP and VNC
+Exec=direct-rdp %u
+Icon=io.github.lidanha.DirectRDP
+Terminal=false
+Type=Application
+Categories=GTK;GNOME;Network;RemoteAccess;
+Keywords=rdp;vnc;remote;desktop;windows;mac;screen sharing;wake on lan;
+MimeType=x-scheme-handler/rdp;x-scheme-handler/vnc;
+StartupNotify=true
+DBusActivatable=false

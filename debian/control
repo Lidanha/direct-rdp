@@ -1,0 +1,32 @@
+Source: direct-rdp
+Section: net
+Priority: optional
+Maintainer: Lidan <lidanh@gmail.com>
+Build-Depends: debhelper-compat (= 13),
+               meson,
+               ninja-build,
+               pkgconf,
+               libgtk-4-dev (>= 4.14),
+               libadwaita-1-dev (>= 1.5),
+               freerdp3-dev (>= 3.5),
+               libwinpr3-dev (>= 3.5),
+               libvncserver-dev,
+               libsecret-1-dev
+Standards-Version: 4.7.0
+Homepage: https://github.com/Lidanha/direct-rdp
+Vcs-Browser: https://github.com/Lidanha/direct-rdp
+Vcs-Git: https://github.com/Lidanha/direct-rdp.git
+Rules-Requires-Root: no
+
+Package: direct-rdp
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Recommends: gnome-keyring
+Description: simple RDP and VNC client for your own computers
+ Direct RDP & VNC connects to Windows PCs, GNOME Remote Desktop and xrdp
+ over RDP, and to Macs and other VNC servers over VNC. Type the address,
+ sign in, and you're in: no account, no relay server, nothing to install
+ on the other computer.
+ .
+ The remote desktop resizes to fit the window, passwords are kept in the
+ system keyring, and Wake on LAN, Ctrl+Alt+Del and full screen are built in.

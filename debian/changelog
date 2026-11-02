@@ -1,0 +1,6 @@
+direct-rdp (0.1.0) resolute; urgency=medium
+
+  * First release: RDP (FreeRDP 3) and VNC (libvncclient), saved computers,
+    keyring passwords, dynamic resolution, full screen and Wake on LAN.
+
+ -- Lidan <lidanh@gmail.com>  Mon, 02 Nov 2026 15:00:00 +0200
