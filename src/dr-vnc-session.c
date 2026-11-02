@@ -98,6 +98,38 @@ vnc_got_cursor (rfbClient *cl, int xhot, int yhot, int width, int height, int bp
   dr_session_push_cursor (DR_SESSION (SELF (cl)), bgra, width, height, xhot, yhot);
 }
 
+static void
+vnc_got_cut_text (rfbClient *cl, const char *text, int len)
+{
+  g_autofree char *utf8 = g_convert (text, len, "UTF-8", "ISO-8859-1", NULL, NULL, NULL);
+
+  if (utf8 != NULL)
+    dr_session_push_clipboard (DR_SESSION (SELF (cl)), utf8);
+}
+
+static void
+vnc_got_cut_text_utf8 (rfbClient *cl, const char *text, int len)
+{
+  g_autofree char *utf8 = g_strndup (text, len);
+
+  if (g_utf8_validate (utf8, -1, NULL))
+    dr_session_push_clipboard (DR_SESSION (SELF (cl)), utf8);
+}
+
+static void
+send_clipboard (rfbClient *cl, const char *text)
+{
+  g_autofree char *latin1 = NULL;
+  gsize len = 0;
+
+  if (SendClientCutTextUTF8 (cl, (char *) text, strlen (text)))
+    return;
+  /* Classic VNC servers (including the Mac's) only take Latin-1 text. */
+  latin1 = g_convert_with_fallback (text, -1, "ISO-8859-1", "UTF-8", "?", NULL, &len, NULL);
+  if (latin1 != NULL)
+    SendClientCutText (cl, latin1, len);
+}
+
 static gboolean
 get_credentials (DrVncSession *self, gboolean need_username, char **username, char **password)
 {
@@ -220,6 +252,10 @@ send_input (DrVncSession *self, const DrInputEvent *e)
 
     case DR_INPUT_RESIZE:
       break; /* the picture is scaled to fit instead */
+
+    case DR_INPUT_CLIPBOARD:
+      send_clipboard (cl, e->text);
+      break;
     }
 }
 
@@ -273,6 +309,8 @@ dr_vnc_session_run (DrSession *session, GError **error)
   cl->GotFrameBufferUpdate = vnc_got_update;
   cl->FinishedFrameBufferUpdate = vnc_finished_update;
   cl->GotCursorShape = vnc_got_cursor;
+  cl->GotXCutText = vnc_got_cut_text;
+  cl->GotXCutTextUTF8 = vnc_got_cut_text_utf8;
   cl->GetPassword = vnc_get_password;
   cl->GetCredential = vnc_get_credential;
   cl->serverHost = strdup (dr_session_get_host (session));
@@ -296,7 +334,7 @@ dr_vnc_session_run (DrSession *session, GError **error)
       while ((event = dr_session_pop_input (session)) != NULL)
         {
           send_input (self, event);
-          g_free (event);
+          dr_input_event_free (event);
         }
 
       status = WaitForMessage (cl, 10000);

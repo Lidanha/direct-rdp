@@ -1,3 +1,9 @@
+direct-rdp (0.2.0) resolute; urgency=medium
+
+  * Copy and paste text with VNC computers, including Macs.
+
+ -- Lidan H <lidanh@gmail.com>  Mon, 02 Nov 2026 16:26:50 +0200
+
 direct-rdp (0.1.0) resolute; urgency=medium
 
   * First release: RDP (FreeRDP 3) and VNC (libvncclient), saved computers,

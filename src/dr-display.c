@@ -10,7 +10,13 @@ struct _DrDisplay
   GtkWidget parent_instance;
 
   DrSession *session;
-  gulong frame_handler, cursor_handler, connected_handler;
+  gulong frame_handler, cursor_handler, connected_handler, clipboard_received_handler;
+
+  /* Text clipboard shared with the remote computer */
+  GdkClipboard *clipboard;
+  gulong clipboard_changed_handler;
+  GCancellable *clipboard_cancellable;
+  char *clipboard_text; /* last text sent or received, to avoid echoing it back */
 
   GHashTable *pressed_keys; /* keycode -> keyval */
   guint pressed_buttons;    /* bit per GDK button number */
@@ -272,10 +278,56 @@ on_cursor_changed (DrDisplay *self)
   gtk_widget_set_cursor (GTK_WIDGET (self), dr_session_get_cursor (self->session));
 }
 
+/* Clipboard */
+
+static void
+on_clipboard_read (GObject *source, GAsyncResult *result, gpointer data)
+{
+  g_autoptr (GError) error = NULL;
+  g_autofree char *text = gdk_clipboard_read_text_finish (GDK_CLIPBOARD (source), result, &error);
+  DrDisplay *self;
+
+  if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+    return;
+  self = DR_DISPLAY (data);
+  if (text == NULL || *text == '\0' || g_strcmp0 (text, self->clipboard_text) == 0)
+    return;
+  g_free (self->clipboard_text);
+  self->clipboard_text = g_strdup (text);
+  dr_session_send_clipboard (self->session, text);
+}
+
+static void
+sync_local_clipboard (DrDisplay *self)
+{
+  if (!dr_session_is_connected (self->session))
+    return;
+  gdk_clipboard_read_text_async (self->clipboard, self->clipboard_cancellable,
+                                 on_clipboard_read, self);
+}
+
+static void
+on_clipboard_received (DrDisplay *self, const char *text)
+{
+  if (g_strcmp0 (text, self->clipboard_text) == 0)
+    return;
+  g_free (self->clipboard_text);
+  self->clipboard_text = g_strdup (text);
+  gdk_clipboard_set_text (self->clipboard, text);
+}
+
+static void
+on_focus_enter (GtkEventControllerFocus *controller, DrDisplay *self)
+{
+  /* Wayland only tells focused windows about clipboard changes. */
+  sync_local_clipboard (self);
+}
+
 static void
 on_connected (DrDisplay *self)
 {
   queue_send_size (self);
+  sync_local_clipboard (self);
 }
 
 static void
@@ -289,8 +341,14 @@ dr_display_dispose (GObject *object)
       g_clear_signal_handler (&self->frame_handler, self->session);
       g_clear_signal_handler (&self->cursor_handler, self->session);
       g_clear_signal_handler (&self->connected_handler, self->session);
+      g_clear_signal_handler (&self->clipboard_received_handler, self->session);
       g_clear_object (&self->session);
     }
+  g_cancellable_cancel (self->clipboard_cancellable);
+  g_clear_object (&self->clipboard_cancellable);
+  if (self->clipboard)
+    g_clear_signal_handler (&self->clipboard_changed_handler, self->clipboard);
+  g_clear_pointer (&self->clipboard_text, g_free);
   g_clear_pointer (&self->pressed_keys, g_hash_table_unref);
   G_OBJECT_CLASS (dr_display_parent_class)->dispose (object);
 }
@@ -334,7 +392,13 @@ dr_display_init (DrDisplay *self)
 
   controller = gtk_event_controller_focus_new ();
   g_signal_connect (controller, "leave", G_CALLBACK (on_focus_leave), self);
+  g_signal_connect (controller, "enter", G_CALLBACK (on_focus_enter), self);
   gtk_widget_add_controller (GTK_WIDGET (self), controller);
+
+  self->clipboard_cancellable = g_cancellable_new ();
+  self->clipboard = gdk_display_get_clipboard (gdk_display_get_default ());
+  self->clipboard_changed_handler =
+    g_signal_connect_swapped (self->clipboard, "changed", G_CALLBACK (sync_local_clipboard), self);
 }
 
 GtkWidget *
@@ -349,5 +413,8 @@ dr_display_new (DrSession *session)
                                                    G_CALLBACK (on_cursor_changed), self);
   self->connected_handler = g_signal_connect_swapped (session, "connected",
                                                       G_CALLBACK (on_connected), self);
+  self->clipboard_received_handler =
+    g_signal_connect_swapped (session, "clipboard-received",
+                              G_CALLBACK (on_clipboard_received), self);
   return GTK_WIDGET (self);
 }

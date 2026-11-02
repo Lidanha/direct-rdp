@@ -59,6 +59,7 @@ enum
   SIGNAL_CURSOR_CHANGED,
   SIGNAL_CREDENTIALS_REQUESTED,
   SIGNAL_CERTIFICATE_REQUESTED,
+  SIGNAL_CLIPBOARD_RECEIVED,
   N_SIGNALS
 };
 static guint signals[N_SIGNALS];
@@ -166,6 +167,10 @@ dr_session_class_init (DrSessionClass *klass)
     g_signal_new ("certificate-requested", G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST,
                   0, NULL, NULL, NULL, G_TYPE_NONE, 3,
                   G_TYPE_STRING, G_TYPE_STRING, G_TYPE_BOOLEAN);
+  /* (text): the remote computer copied text */
+  signals[SIGNAL_CLIPBOARD_RECEIVED] =
+    g_signal_new ("clipboard-received", G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST,
+                  0, NULL, NULL, NULL, G_TYPE_NONE, 1, G_TYPE_STRING);
 }
 
 static void
@@ -173,7 +178,7 @@ dr_session_init (DrSession *self)
 {
   DrSessionPrivate *priv = dr_session_get_instance_private (self);
 
-  priv->input = g_async_queue_new_full (g_free);
+  priv->input = g_async_queue_new_full ((GDestroyNotify) dr_input_event_free);
   g_mutex_init (&priv->frame_lock);
   g_mutex_init (&priv->cursor_lock);
   g_mutex_init (&priv->prompt_lock);
@@ -291,6 +296,26 @@ emit_disconnected (gpointer data)
   return G_SOURCE_REMOVE;
 }
 
+static gboolean
+emit_clipboard_received (gpointer data)
+{
+  Dispatch *d = data;
+  DrSessionPrivate *priv = dr_session_get_instance_private (d->self);
+
+  if (!g_atomic_int_get (&priv->stop))
+    g_signal_emit (d->self, signals[SIGNAL_CLIPBOARD_RECEIVED], 0, d->a);
+  return G_SOURCE_REMOVE;
+}
+
+void
+dr_session_push_clipboard (DrSession *self, const char *text)
+{
+  Dispatch *d = g_new0 (Dispatch, 1);
+
+  d->a = g_strdup (text);
+  dispatch (self, emit_clipboard_received, d);
+}
+
 static gpointer
 session_thread (gpointer data)
 {
@@ -401,6 +426,30 @@ dr_session_send_keys (DrSession *self, const guint *keycodes, const guint *keyva
       event.down = FALSE;
       dr_session_send (self, &event);
     }
+}
+
+void
+dr_session_send_clipboard (DrSession *self, const char *text)
+{
+  DrSessionPrivate *priv = dr_session_get_instance_private (self);
+  DrInputEvent *event;
+
+  if (!priv->connected)
+    return;
+  event = g_new0 (DrInputEvent, 1);
+  event->type = DR_INPUT_CLIPBOARD;
+  event->text = g_strdup (text);
+  g_async_queue_push (priv->input, event);
+  DR_SESSION_GET_CLASS (self)->wake (self);
+}
+
+void
+dr_input_event_free (DrInputEvent *event)
+{
+  if (event == NULL)
+    return;
+  g_free (event->text);
+  g_free (event);
 }
 
 DrInputEvent *

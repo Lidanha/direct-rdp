@@ -33,7 +33,7 @@ main (int argc, char **argv)
   /* FreeRDP logs every certificate and NLA step to stderr; keep errors only. */
   g_setenv ("WLOG_LEVEL", "ERROR", FALSE);
   g_set_application_name ("Direct RDP & VNC");
-  app = adw_application_new (APP_ID, G_APPLICATION_HANDLES_OPEN);
+  app = adw_application_new (APP_ID, G_APPLICATION_HANDLES_OPEN | G_APPLICATION_CAN_OVERRIDE_APP_ID);
   g_signal_connect (app, "activate", G_CALLBACK (on_activate), NULL);
   g_signal_connect (app, "open", G_CALLBACK (on_open), NULL);
   return g_application_run (G_APPLICATION (app), argc, argv);

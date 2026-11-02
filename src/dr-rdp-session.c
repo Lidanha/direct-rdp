@@ -478,6 +478,9 @@ send_input (DrRdpSession *self, rdpInput *input, const DrInputEvent *e)
       self->wanted_scale = e->scale;
       send_wanted_size (self);
       break;
+
+    case DR_INPUT_CLIPBOARD:
+      break;
     }
 }
 
@@ -629,7 +632,7 @@ dr_rdp_session_run (DrSession *session, GError **error)
           while ((event = dr_session_pop_input (session)) != NULL)
             {
               send_input (self, context->input, event);
-              g_free (event);
+              dr_input_event_free (event);
             }
         }
       freerdp_disconnect (instance);

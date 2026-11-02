@@ -31,6 +31,7 @@ typedef enum
   DR_INPUT_SCROLL,
   DR_INPUT_KEY,
   DR_INPUT_RESIZE,
+  DR_INPUT_CLIPBOARD,
 } DrInputType;
 
 /* One input event, queued on the main thread and sent from the session's thread. */
@@ -44,7 +45,10 @@ typedef struct
   guint keycode;     /* key: XKB keycode (evdev + 8) */
   guint keyval;      /* key: X keysym */
   int scale;         /* resize: desktop scale in percent */
+  char *text;        /* clipboard: UTF-8 text, owned by the event */
 } DrInputEvent;
+
+void dr_input_event_free (DrInputEvent *event);
 
 #define DR_TYPE_SESSION (dr_session_get_type ())
 G_DECLARE_DERIVABLE_TYPE (DrSession, dr_session, DR, SESSION, GObject)
@@ -80,6 +84,7 @@ void dr_session_send_keys (DrSession *self, const guint *keycodes, const guint *
 void dr_session_answer_credentials (DrSession *self, gboolean ok, const char *username,
                                     const char *password, const char *domain);
 void dr_session_answer_certificate (DrSession *self, DrCertAnswer answer);
+void dr_session_send_clipboard (DrSession *self, const char *text);
 
 /* Session thread (used by subclasses) */
 gboolean dr_session_should_stop (DrSession *self);
@@ -92,6 +97,7 @@ void dr_session_push_frame (DrSession *self, const guint8 *data, int width, int 
 void dr_session_push_cursor (DrSession *self, const guint8 *bgra, int width, int height,
                              int hot_x, int hot_y);
 void dr_session_push_cursor_named (DrSession *self, const char *name);
+void dr_session_push_clipboard (DrSession *self, const char *text);
 gboolean dr_session_ask_credentials (DrSession *self, const char *message,
                                      gboolean need_username,
                                      char **username, char **password, char **domain);
