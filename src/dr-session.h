@@ -41,7 +41,8 @@ typedef struct
   int x, y;          /* remote pixels (motion, button, scroll); new size (resize) */
   guint button;      /* GDK button number */
   gboolean down;     /* button, key */
-  int dx, dy;        /* scroll, in wheel notches */
+  int dx, dy;        /* scroll, in whole wheel notches */
+  double notches_x, notches_y; /* scroll, as far as it went, fractions too */
   guint keycode;     /* key: XKB keycode (evdev + 8) */
   guint keyval;      /* key: X keysym */
   int scale;         /* resize: desktop scale in percent */

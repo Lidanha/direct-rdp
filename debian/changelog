@@ -1,3 +1,10 @@
+direct-rdp (0.6.2) resolute; urgency=medium
+
+  * Scroll a Mac by a real distance with Apple's own scroll message, as
+    Apple's viewer does, instead of a couple of pixels a wheel notch.
+
+ -- Lidan H <lidanh@gmail.com>  Mon, 02 Nov 2026 20:55:00 +0200
+
 direct-rdp (0.6.1) resolute; urgency=medium
 
   * Keep a Mac smooth after its display sleeps: it stopped sending every

@@ -101,9 +101,9 @@ to_remote (DrDisplay *self, double x, double y, int *rx, int *ry)
 }
 
 static void
-send_pointer (DrDisplay *self, DrInputType type, guint button, gboolean down, int dx, int dy)
+send_pointer (DrDisplay *self, DrInputType type, guint button, gboolean down)
 {
-  DrInputEvent event = { .type = type, .button = button, .down = down, .dx = dx, .dy = dy };
+  DrInputEvent event = { .type = type, .button = button, .down = down };
 
   if (to_remote (self, self->last_x, self->last_y, &event.x, &event.y))
     dr_session_send (self->session, &event);
@@ -127,7 +127,7 @@ release_everything (DrDisplay *self)
 
   for (guint button = 1; button < 32; button++)
     if (self->pressed_buttons & (1u << button))
-      send_pointer (self, DR_INPUT_BUTTON, button, FALSE, 0, 0);
+      send_pointer (self, DR_INPUT_BUTTON, button, FALSE);
   self->pressed_buttons = 0;
 }
 
@@ -159,7 +159,7 @@ on_legacy_event (GtkEventControllerLegacy *controller, GdkEvent *event, DrDispla
 
   if (type == GDK_MOTION_NOTIFY)
     {
-      send_pointer (self, DR_INPUT_MOTION, 0, FALSE, 0, 0);
+      send_pointer (self, DR_INPUT_MOTION, 0, FALSE);
       return FALSE;
     }
 
@@ -171,30 +171,41 @@ on_legacy_event (GtkEventControllerLegacy *controller, GdkEvent *event, DrDispla
     {
       gtk_widget_grab_focus (GTK_WIDGET (self));
       self->pressed_buttons |= 1u << button;
-      send_pointer (self, DR_INPUT_BUTTON, button, TRUE, 0, 0);
+      send_pointer (self, DR_INPUT_BUTTON, button, TRUE);
     }
   else if (self->pressed_buttons & (1u << button))
     {
       self->pressed_buttons &= ~(1u << button);
-      send_pointer (self, DR_INPUT_BUTTON, button, FALSE, 0, 0);
+      send_pointer (self, DR_INPUT_BUTTON, button, FALSE);
     }
   return TRUE;
 }
 
+/* A touchpad scrolls by pixels; this many of them are counted as one notch. */
+#define PIXELS_PER_NOTCH 50.0
+
 static gboolean
 on_scroll (GtkEventControllerScroll *controller, double dx, double dy, DrDisplay *self)
 {
-  int notches_x, notches_y;
+  DrInputEvent event = { .type = DR_INPUT_SCROLL };
+
+  if (gtk_event_controller_scroll_get_unit (controller) == GDK_SCROLL_UNIT_SURFACE)
+    {
+      dx /= PIXELS_PER_NOTCH;
+      dy /= PIXELS_PER_NOTCH;
+    }
 
   self->scroll_dx += dx;
   self->scroll_dy += dy;
-  notches_x = (int) self->scroll_dx;
-  notches_y = (int) self->scroll_dy;
-  self->scroll_dx -= notches_x;
-  self->scroll_dy -= notches_y;
+  event.dx = (int) self->scroll_dx;
+  event.dy = (int) self->scroll_dy;
+  self->scroll_dx -= event.dx;
+  self->scroll_dy -= event.dy;
+  event.notches_x = dx;
+  event.notches_y = dy;
 
-  if (notches_x != 0 || notches_y != 0)
-    send_pointer (self, DR_INPUT_SCROLL, 0, FALSE, notches_x, notches_y);
+  if (to_remote (self, self->last_x, self->last_y, &event.x, &event.y))
+    dr_session_send (self->session, &event);
   return TRUE;
 }
 

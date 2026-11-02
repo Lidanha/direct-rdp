@@ -33,6 +33,7 @@ struct _DrVncSession
   int busy_seconds, calm_seconds;
   gint64 settled_at;         /* back in Full, whose first repaint is no motion */
   gboolean armed;            /* AutoFrameBufferUpdate covers the screen */
+  double scroll_x, scroll_y; /* points of a Mac scroll not sent yet */
   guint updates;
   gint64 updates_since;
   gboolean cancelled;
@@ -628,6 +629,56 @@ vnc_get_credential (rfbClient *cl, int type)
   return credential;
 }
 
+/* A Mac scrolls only about two pixels for a wheel button of the pointer
+ * event, so like Apple's viewer this sends the distance in Apple's own
+ * scroll-wheel event: message 0x17, kind 11, with deltas in lines, in lines
+ * as 16.16 fixed point and in points, each horizontal, vertical and a third
+ * axis, positive up and to the left. Continuous makes the points count.
+ * Layout from zDesk's docs/apple-vnc-889.md. */
+#define POINTS_PER_NOTCH 50.0
+#define POINTS_PER_LINE 10
+
+static void
+apple_scroll (DrVncSession *self, rfbClient *cl, const DrInputEvent *e)
+{
+  guint8 message[58] = { 0x17, 0, 0, 54, 0, 1, 0, 11 };
+  gint32 points[3] = { 0 };
+  guint8 *p = message + 8;
+
+  self->scroll_x -= e->notches_x * POINTS_PER_NOTCH;
+  self->scroll_y -= e->notches_y * POINTS_PER_NOTCH;
+  points[0] = (gint32) self->scroll_x;
+  points[1] = (gint32) self->scroll_y;
+  self->scroll_x -= points[0];
+  self->scroll_y -= points[1];
+  if (points[0] == 0 && points[1] == 0)
+    return;
+
+  for (int i = 0; i < 3; i++, p += 2)
+    {
+      gint16 lines = points[i] / POINTS_PER_LINE;
+      p[0] = (guint16) lines >> 8;
+      p[1] = (guint16) lines & 0xff;
+    }
+  for (int i = 0; i < 3; i++, p += 4)
+    {
+      guint32 fixed = (guint32) (points[i] * 65536 / POINTS_PER_LINE);
+      p[0] = fixed >> 24; p[1] = fixed >> 16; p[2] = fixed >> 8; p[3] = fixed;
+    }
+  for (int i = 0; i < 3; i++, p += 4)
+    {
+      guint32 value = (guint32) points[i];
+      p[0] = value >> 24; p[1] = value >> 16; p[2] = value >> 8; p[3] = value;
+    }
+  p += 12;                                /* scroll phase, momentum, count */
+  p[3] = 0x02;                            /* continuous */
+  p += 4;
+  p[0] = e->x >> 8; p[1] = e->x & 0xff;
+  p[2] = e->y >> 8; p[3] = e->y & 0xff;
+
+  WriteToRFBServer (cl, (const char *) message, sizeof message);
+}
+
 static void
 send_input (DrVncSession *self, const DrInputEvent *e)
 {
@@ -656,6 +707,11 @@ send_input (DrVncSession *self, const DrInputEvent *e)
       break;
 
     case DR_INPUT_SCROLL:
+      if (self->apple)
+        {
+          apple_scroll (self, cl, e);
+          break;
+        }
       for (int i = 0; i < ABS (e->dy); i++)
         {
           bit = e->dy < 0 ? rfbButton4Mask : rfbButton5Mask;

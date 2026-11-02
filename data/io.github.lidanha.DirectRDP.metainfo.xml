@@ -26,6 +26,11 @@
   <url type="bugtracker">https://github.com/Lidanha/direct-rdp/issues</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.6.2" date="2026-11-02">
+      <description>
+        <p>The scroll wheel and touchpad scroll a Mac as far as they would locally, instead of a couple of pixels a notch.</p>
+      </description>
+    </release>
     <release version="0.6.1" date="2026-11-02">
       <description>
         <p>A Mac stays smooth after its display sleeps: it stopped sending every change as it happens once its display had turned off, until you reconnected.</p>
