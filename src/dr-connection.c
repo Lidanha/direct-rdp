@@ -38,6 +38,7 @@ dr_connection_copy (const DrConnection *conn)
   copy->domain = g_strdup (conn->domain);
   copy->mac = g_strdup (conn->mac);
   copy->last_used = conn->last_used;
+  copy->adaptive = conn->adaptive;
   return copy;
 }
 
@@ -202,6 +203,9 @@ dr_connections_load (void)
       conn->domain = get_string (file, groups[i], "domain");
       conn->mac = get_string (file, groups[i], "mac");
       conn->last_used = g_key_file_get_int64 (file, groups[i], "last-used", NULL);
+      g_free (protocol);
+      protocol = get_string (file, groups[i], "picture");
+      conn->adaptive = g_strcmp0 (protocol, "adaptive") == 0;
 
       if (conn->host == NULL)
         dr_connection_free (conn);
@@ -242,6 +246,8 @@ dr_connections_save (GPtrArray *connections)
       set_string (file, conn->id, "domain", conn->domain);
       set_string (file, conn->id, "mac", conn->mac);
       g_key_file_set_int64 (file, conn->id, "last-used", conn->last_used);
+      if (conn->adaptive)
+        g_key_file_set_string (file, conn->id, "picture", "adaptive");
     }
 
   g_mkdir_with_parents (dir, 0700);

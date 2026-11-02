@@ -346,7 +346,10 @@ view_start_with_password (View *view, const char *password)
     }
 
   if (view->conn->protocol == DR_PROTOCOL_VNC)
-    view->session = dr_vnc_session_new (view->conn->host, dr_connection_get_port (view->conn));
+    {
+      view->session = dr_vnc_session_new (view->conn->host, dr_connection_get_port (view->conn));
+      dr_vnc_session_set_adaptive (DR_VNC_SESSION (view->session), view->conn->adaptive);
+    }
   else
     view->session = dr_rdp_session_new (view->conn->host, dr_connection_get_port (view->conn));
   dr_session_set_credentials (view->session, view->conn->username, view->password,
@@ -450,6 +453,26 @@ send_keys_action (GSimpleAction *action, GVariant *parameter, gpointer data)
     gtk_widget_grab_focus (view->display);
 }
 
+/* A Mac's picture: Full quality is lossless, Adaptive sends a fraction of the
+ * data for slow connections. Kept with the saved computer. */
+static void
+quality_changed (GSimpleAction *action, GVariant *value, gpointer data)
+{
+  View *view = data;
+  gboolean adaptive = g_str_equal (g_variant_get_string (value, NULL), "adaptive");
+  DrConnection *saved = find_connection (view->window, view->conn->id);
+
+  g_simple_action_set_state (action, value);
+  view->conn->adaptive = adaptive;
+  if (DR_IS_VNC_SESSION (view->session))
+    dr_vnc_session_set_adaptive (DR_VNC_SESSION (view->session), adaptive);
+  if (saved && saved->adaptive != adaptive)
+    {
+      saved->adaptive = adaptive;
+      dr_connections_save (view->window->connections);
+    }
+}
+
 static void
 toggle_fullscreen_action (GSimpleAction *action, GVariant *parameter, gpointer data)
 {
@@ -550,6 +573,7 @@ open_connection (DrWindow *self, const DrConnection *conn)
   const GActionEntry entries[] = {
     { "send-keys", send_keys_action, "s", NULL, NULL },
     { "fullscreen", toggle_fullscreen_action, NULL, NULL, NULL },
+    { "quality", NULL, "s", conn->adaptive ? "'adaptive'" : "'full'", quality_changed },
   };
 
   view->window = self;
@@ -573,6 +597,21 @@ open_connection (DrWindow *self, const DrConnection *conn)
   gtk_actionable_set_action_name (GTK_ACTIONABLE (fullscreen), "session.fullscreen");
   adw_header_bar_pack_end (ADW_HEADER_BAR (header), fullscreen);
   adw_header_bar_pack_end (ADW_HEADER_BAR (header), keys);
+
+  if (conn->protocol == DR_PROTOCOL_VNC)
+    {
+      GtkWidget *quality = gtk_menu_button_new ();
+      g_autoptr (GMenu) quality_menu = g_menu_new ();
+      g_autoptr (GMenu) section = g_menu_new ();
+
+      g_menu_append (section, "Full Quality", "session.quality::full");
+      g_menu_append (section, "Adaptive (Less Data)", "session.quality::adaptive");
+      g_menu_append_section (quality_menu, "Mac Picture", G_MENU_MODEL (section));
+      gtk_menu_button_set_menu_model (GTK_MENU_BUTTON (quality), G_MENU_MODEL (quality_menu));
+      gtk_menu_button_set_icon_name (GTK_MENU_BUTTON (quality), "video-display-symbolic");
+      gtk_widget_set_tooltip_text (quality, "Picture Quality");
+      adw_header_bar_pack_end (ADW_HEADER_BAR (header), quality);
+    }
 
   view->stack = GTK_STACK (stack);
   gtk_stack_add_named (view->stack, build_connecting_page (view), "connecting");

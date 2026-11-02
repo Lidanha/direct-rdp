@@ -77,6 +77,7 @@ gboolean dr_session_is_connected (DrSession *self);
 /* Main thread */
 void dr_session_start (DrSession *self, int width, int height, int scale);
 void dr_session_disconnect (DrSession *self);
+/* A new reference to the current frame, or NULL before the first one. */
 GdkTexture *dr_session_get_texture (DrSession *self);
 GdkCursor *dr_session_get_cursor (DrSession *self);
 void dr_session_send (DrSession *self, const DrInputEvent *event);

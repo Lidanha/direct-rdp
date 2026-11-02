@@ -28,6 +28,7 @@ typedef struct
   gsize frame_stride;
   GdkMemoryFormat frame_format;
   gboolean frame_dirty;
+  cairo_region_t *frame_damage;
   guint frame_idle;
   GdkTexture *texture;
 
@@ -77,6 +78,7 @@ dr_session_finalize (GObject *object)
   g_async_queue_unref (priv->input);
   g_free (priv->frame);
   g_clear_object (&priv->texture);
+  g_clear_pointer (&priv->frame_damage, cairo_region_destroy);
   g_clear_pointer (&priv->cursor_bytes, g_bytes_unref);
   g_free (priv->cursor_name);
   g_clear_object (&priv->cursor);
@@ -508,6 +510,11 @@ dr_session_push_frame (DrSession *self, const guint8 *data, int width, int heigh
     memcpy (priv->frame + row * priv->frame_stride + (gsize) x * 4,
             data + row * stride + (gsize) x * 4, (gsize) w * 4);
 
+  /* What changed since the last texture, so only that is uploaded again. */
+  if (priv->frame_damage == NULL)
+    priv->frame_damage = cairo_region_create ();
+  cairo_region_union_rectangle (priv->frame_damage, &(cairo_rectangle_int_t) { x, y, w, h });
+
   priv->frame_dirty = TRUE;
   if (priv->frame_idle == 0)
     priv->frame_idle = g_idle_add_full (G_PRIORITY_DEFAULT, emit_frame_changed,
@@ -520,6 +527,7 @@ GdkTexture *
 dr_session_get_texture (DrSession *self)
 {
   DrSessionPrivate *priv = dr_session_get_instance_private (self);
+  GdkTexture *texture;
 
   g_mutex_lock (&priv->frame_lock);
   if (priv->frame_dirty && priv->frame != NULL)
@@ -527,14 +535,35 @@ dr_session_get_texture (DrSession *self)
       g_autoptr (GBytes) bytes = g_bytes_new (priv->frame,
                                               priv->frame_stride * priv->frame_height);
 
+#if GTK_CHECK_VERSION (4, 16, 0)
+      g_autoptr (GdkMemoryTextureBuilder) builder = gdk_memory_texture_builder_new ();
+
+      gdk_memory_texture_builder_set_width (builder, priv->frame_width);
+      gdk_memory_texture_builder_set_height (builder, priv->frame_height);
+      gdk_memory_texture_builder_set_format (builder, priv->frame_format);
+      gdk_memory_texture_builder_set_bytes (builder, bytes);
+      gdk_memory_texture_builder_set_stride (builder, priv->frame_stride);
+      if (priv->texture != NULL && priv->frame_damage != NULL &&
+          gdk_texture_get_width (priv->texture) == priv->frame_width &&
+          gdk_texture_get_height (priv->texture) == priv->frame_height)
+        {
+          gdk_memory_texture_builder_set_update_texture (builder, priv->texture);
+          gdk_memory_texture_builder_set_update_region (builder, priv->frame_damage);
+        }
+      g_clear_object (&priv->texture);
+      priv->texture = gdk_memory_texture_builder_build (builder);
+#else
       g_clear_object (&priv->texture);
       priv->texture = gdk_memory_texture_new (priv->frame_width, priv->frame_height,
                                               priv->frame_format, bytes, priv->frame_stride);
+#endif
+      g_clear_pointer (&priv->frame_damage, cairo_region_destroy);
       priv->frame_dirty = FALSE;
     }
+  texture = priv->texture ? g_object_ref (priv->texture) : NULL;
   g_mutex_unlock (&priv->frame_lock);
 
-  return priv->texture;
+  return texture;
 }
 
 /* Cursor */

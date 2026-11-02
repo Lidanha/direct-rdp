@@ -21,6 +21,11 @@ struct _DrVncSession
   gboolean asked_credentials;
   gboolean apple; /* a Mac's Screen Sharing, which has its own clipboard messages */
   DrAppleAdaptive *adaptive; /* the Mac's Adaptive picture */
+  int want_adaptive;         /* atomic: Adaptive rather than Full quality */
+  gboolean is_adaptive;      /* what the Mac was last asked for */
+  int armed_width, armed_height;
+  guint updates;
+  gint64 updates_since;
   gboolean cancelled;
 };
 
@@ -88,6 +93,17 @@ static void
 vnc_finished_update (rfbClient *cl)
 {
   DrVncSession *self = SELF (cl);
+  gint64 now = g_get_monotonic_time ();
+
+  /* How many updates a second the server sends, with debug messages on. */
+  self->updates++;
+  if (now - self->updates_since >= 5 * G_USEC_PER_SEC)
+    {
+      if (self->updates_since)
+        g_debug ("VNC: %.1f updates a second", self->updates * (double) G_USEC_PER_SEC / (now - self->updates_since));
+      self->updates = 0;
+      self->updates_since = now;
+    }
 
   if (self->dirty_x2 > self->dirty_x1)
     dr_session_push_frame (DR_SESSION (self), cl->frameBuffer, cl->width, cl->height,
@@ -316,6 +332,35 @@ apple_handle_message (rfbClient *cl, rfbServerToClientMsg *message)
     }
 }
 
+/* Lists Adaptive's tiles or Full quality's zlib first. Switching later is
+ * safe: the Mac keeps a deflate stream per encoding, and never sends the ZRLE
+ * that shares libvncclient's zlib stream. */
+static void
+apple_set_quality (DrVncSession *self, rfbClient *cl)
+{
+  self->is_adaptive = g_atomic_int_get (&self->want_adaptive);
+  cl->appData.encodingsString = self->is_adaptive ? "raw" : "zlib raw";
+}
+
+/* Apple's viewer arms AutoFrameBufferUpdate at 0, so the Mac pushes every
+ * change of the screen as soon as it captures it. Answering requests alone,
+ * a Mac's own display draws a few updates a second while a window moves.
+ * The arming covers the screen, and is sent again when its size changes. */
+static void
+apple_arm (DrVncSession *self, rfbClient *cl)
+{
+  const guint8 message[16] = {
+    0x09, 0, 0, 1,                        /* version 1 */
+    0, 0, 0, 0,                           /* interval: as fast as it changes */
+    0, 0, 0, 0,                           /* x, y */
+    cl->width >> 8, cl->width & 0xff, cl->height >> 8, cl->height & 0xff,
+  };
+
+  WriteToRFBServer (cl, (const char *) message, sizeof message);
+  self->armed_width = cl->width;
+  self->armed_height = cl->height;
+}
+
 /* Apple's picture
  *
  * A Mac codes every rectangle in the first of zlib, ZRLE and its own codecs
@@ -325,7 +370,7 @@ apple_handle_message (rfbClient *cl, rfbServerToClientMsg *message)
  * size; dr-apple-adaptive.c decodes them. libvncclient lists extension
  * encodings after its own, so a Mac session lists only raw of those
  * (vnc_get_credential) and lets this list put the tiles ahead of ZRLE.
- * DR_APPLE_QUALITY=full asks for Full quality's lossless zlib instead.
+ * Full quality asks for lossless zlib instead, as Apple's viewer does.
  * Anything else ignores 0x3f3.
  */
 static int apple_encodings[] = { DR_APPLE_ADAPTIVE_ENCODING, rfbEncodingZRLE, 0 };
@@ -490,7 +535,7 @@ vnc_get_credential (rfbClient *cl, int type)
    * for its own picture: libvncclient's zlib and ZRLE share one inflate stream,
    * so switching from ZRLE later would decode zlib on the wrong stream. */
   if (cl->authScheme == rfbARD)
-    cl->appData.encodingsString = g_strcmp0 (g_getenv ("DR_APPLE_QUALITY"), "full") == 0 ? "zlib raw" : "raw";
+    apple_set_quality (SELF (cl), cl);
   if (!get_credentials (SELF (cl), TRUE, &username, &password))
     return NULL;
 
@@ -641,7 +686,10 @@ dr_vnc_session_run (DrSession *session, GError **error)
   self->client = cl;
   self->apple = cl->authScheme == rfbARD;
   if (self->apple)
-    apple_start (cl);
+    {
+      apple_start (cl);
+      apple_arm (self, cl);
+    }
   dr_session_notify_connected (session);
 
   while (!dr_session_should_stop (session))
@@ -653,6 +701,14 @@ dr_vnc_session_run (DrSession *session, GError **error)
           send_input (self, event);
           dr_input_event_free (event);
         }
+
+      if (self->apple && g_atomic_int_get (&self->want_adaptive) != self->is_adaptive)
+        {
+          apple_set_quality (self, cl);
+          SetFormatAndEncodings (cl);
+        }
+      if (self->apple && (cl->width != self->armed_width || cl->height != self->armed_height))
+        apple_arm (self, cl);
 
       status = WaitForMessage (cl, 10000);
       /* The server closed the connection; the base class reports it. */
@@ -699,6 +755,14 @@ static void
 dr_vnc_session_init (DrVncSession *self)
 {
   self->pressed_keys = g_hash_table_new (NULL, NULL);
+}
+
+void
+dr_vnc_session_set_adaptive (DrVncSession *self, gboolean adaptive)
+{
+  g_return_if_fail (DR_IS_VNC_SESSION (self));
+
+  g_atomic_int_set (&self->want_adaptive, adaptive);
 }
 
 DrSession *

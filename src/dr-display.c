@@ -42,7 +42,7 @@ surface_scale (DrDisplay *self)
 static gboolean
 get_view_rect (DrDisplay *self, graphene_rect_t *rect, double *scale)
 {
-  GdkTexture *texture = dr_session_get_texture (self->session);
+  g_autoptr (GdkTexture) texture = dr_session_get_texture (self->session);
   int width = gtk_widget_get_width (GTK_WIDGET (self));
   int height = gtk_widget_get_height (GTK_WIDGET (self));
   int tw, th;
@@ -67,7 +67,7 @@ static void
 dr_display_snapshot (GtkWidget *widget, GtkSnapshot *snapshot)
 {
   DrDisplay *self = DR_DISPLAY (widget);
-  GdkTexture *texture = dr_session_get_texture (self->session);
+  g_autoptr (GdkTexture) texture = dr_session_get_texture (self->session);
   graphene_rect_t rect;
   double scale;
   GdkRGBA black = { 0, 0, 0, 1 };
@@ -88,7 +88,7 @@ dr_display_snapshot (GtkWidget *widget, GtkSnapshot *snapshot)
 static gboolean
 to_remote (DrDisplay *self, double x, double y, int *rx, int *ry)
 {
-  GdkTexture *texture = dr_session_get_texture (self->session);
+  g_autoptr (GdkTexture) texture = dr_session_get_texture (self->session);
   graphene_rect_t rect;
   double scale;
 

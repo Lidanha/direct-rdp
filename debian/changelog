@@ -1,3 +1,13 @@
+direct-rdp (0.5.0) resolute; urgency=medium
+
+  * Have Macs send every change as it happens, as Apple's viewer does,
+    instead of a few updates a second.
+  * Show Macs in full quality by default, with a Picture Quality menu to
+    switch to Adaptive on slow connections; the choice is saved.
+  * Upload only the changed part of the screen when drawing.
+
+ -- Lidan H <lidanh@gmail.com>  Mon, 02 Nov 2026 18:04:58 +0200
+
 direct-rdp (0.4.0) resolute; urgency=medium
 
   * Show Macs with Apple's own Adaptive picture encoding: 8x8 tiles that

@@ -21,6 +21,7 @@ typedef struct
   char *username;
   char *domain;
   char *mac;      /* for Wake on LAN */
+  gboolean adaptive; /* Macs: Apple's Adaptive picture instead of Full quality */
   gint64 last_used;
 } DrConnection;
 
