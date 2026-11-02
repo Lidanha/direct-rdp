@@ -12,7 +12,8 @@ Build-Depends: debhelper-compat (= 13),
                freerdp3-dev (>= 3.5),
                libwinpr3-dev (>= 3.5),
                libvncserver-dev,
-               libsecret-1-dev
+               libsecret-1-dev,
+               zlib1g-dev
 Standards-Version: 4.7.0
 Homepage: https://github.com/Lidanha/direct-rdp
 Vcs-Browser: https://github.com/Lidanha/direct-rdp

@@ -1,3 +1,10 @@
+direct-rdp (0.3.0) resolute; urgency=medium
+
+  * Copy and paste with Macs in both directions, using Apple's Screen
+    Sharing pasteboard messages.
+
+ -- Lidan H <lidanh@gmail.com>  Mon, 02 Nov 2026 17:28:26 +0200
+
 direct-rdp (0.2.0) resolute; urgency=medium
 
   * Copy and paste text with VNC computers, including Macs.

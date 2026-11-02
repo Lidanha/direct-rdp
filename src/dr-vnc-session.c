@@ -6,6 +6,7 @@
 #include "dr-vnc-session.h"
 
 #include <rfb/rfbclient.h>
+#include <zlib.h>
 
 struct _DrVncSession
 {
@@ -16,6 +17,7 @@ struct _DrVncSession
   GHashTable *pressed_keys; /* keycode -> keysym sent on press */
   int dirty_x1, dirty_y1, dirty_x2, dirty_y2;
   gboolean asked_credentials;
+  gboolean apple; /* a Mac's Screen Sharing, which has its own clipboard messages */
   gboolean cancelled;
 };
 
@@ -103,6 +105,8 @@ vnc_got_cut_text (rfbClient *cl, const char *text, int len)
 {
   g_autofree char *utf8 = g_convert (text, len, "UTF-8", "ISO-8859-1", NULL, NULL, NULL);
 
+  g_debug ("VNC: received %d bytes of Latin-1 clipboard text", len);
+
   if (utf8 != NULL)
     dr_session_push_clipboard (DR_SESSION (SELF (cl)), utf8);
 }
@@ -113,16 +117,252 @@ vnc_got_cut_text_utf8 (rfbClient *cl, const char *text, int len)
 {
   g_autofree char *utf8 = g_strndup (text, len);
 
+  g_debug ("VNC: received %d bytes of UTF-8 clipboard text", len);
+
   if (g_utf8_validate (utf8, -1, NULL))
     dr_session_push_clipboard (DR_SESSION (SELF (cl)), utf8);
 }
 #endif
+
+/* Apple's clipboard
+ *
+ * A Mac never sends or takes standard RFB cut text. Its own viewer enables
+ * AutoPasteboard, is told by MiscStatus when the Mac's pasteboard changes,
+ * fetches it, and sends its own the same way: a zlib-compressed archive of
+ * pasteboard flavors. Layouts follow the measurements published by remotex
+ * (https://github.com/andrewtheguy/remotex, docs/apple-vnc-889.md).
+ */
+
+#define APPLE_MISC_STATUS 0x14
+#define APPLE_PASTEBOARD 0x1f
+#define APPLE_PASTEBOARD_CHANGED 2
+#define APPLE_MAX_ARCHIVE (100 * 1024 * 1024)
+#define APPLE_TEXT_FLAVOR "public.utf8-plain-text"
+
+static void
+apple_start (rfbClient *cl)
+{
+  /* ViewerInfo: who we are, and the bitmap of server messages we handle. Its
+   * bit 20 lets the Mac send MiscStatus. */
+  guint8 viewer_info[66] = { 0x21, 0, 0, 62, 0, 1, 0, 0, 0, 2, 0, 0, 0, 6, 0, 0, 0, 1 };
+  const guint8 set_mode_control[4] = { 0x0a, 0, 0, 1 };
+  const guint8 auto_pasteboard[8] = { 0x15, 0, 0, 1, 0, 0, 0, 0 };
+
+  viewer_info[25] = 26; /* macOS 26.6.2 */
+  viewer_info[29] = 6;
+  viewer_info[33] = 2;
+  viewer_info[34] = 0xb0;
+  viewer_info[36] = 0x0c;
+  viewer_info[37] = 0x03;
+  viewer_info[38] = 0x90;
+  viewer_info[44] = 0x40;
+
+  WriteToRFBServer (cl, (const char *) viewer_info, sizeof viewer_info);
+  WriteToRFBServer (cl, (const char *) set_mode_control, sizeof set_mode_control);
+  WriteToRFBServer (cl, (const char *) auto_pasteboard, sizeof auto_pasteboard);
+}
+
+static guint32
+read_u32 (const guint8 *p)
+{
+  return ((guint32) p[0] << 24) | ((guint32) p[1] << 16) | ((guint32) p[2] << 8) | p[3];
+}
+
+static void
+write_u32 (GByteArray *out, guint32 v)
+{
+  guint8 b[4] = { v >> 24, v >> 16, v >> 8, v };
+  g_byte_array_append (out, b, 4);
+}
+
+/* Finds the text in an archive: items of flavors, each a counted name, a
+ * reserved word, counted key/value tags and counted data. */
+static char *
+apple_archive_text (const guint8 *data, gsize len)
+{
+  gsize pos = 0;
+
+#define NEED(n) if ((n) > len - pos) return NULL
+  while (pos < len)
+    {
+      guint32 flavors;
+
+      NEED (4);
+      flavors = read_u32 (data + pos);
+      pos += 4;
+      for (guint32 f = 0; f < flavors; f++)
+        {
+          guint32 name_len, tags, data_len;
+          const guint8 *name;
+
+          NEED (4);
+          name_len = read_u32 (data + pos);
+          pos += 4;
+          NEED (name_len);
+          name = data + pos;
+          pos += name_len;
+          NEED (8);
+          tags = read_u32 (data + pos + 4);
+          pos += 8;
+          for (guint32 t = 0; t < tags * 2; t++)
+            {
+              guint32 n;
+
+              NEED (4);
+              n = read_u32 (data + pos);
+              pos += 4;
+              NEED (n);
+              pos += n;
+            }
+          NEED (4);
+          data_len = read_u32 (data + pos);
+          pos += 4;
+          NEED (data_len);
+          if (name_len == strlen (APPLE_TEXT_FLAVOR) &&
+              memcmp (name, APPLE_TEXT_FLAVOR, name_len) == 0 &&
+              g_utf8_validate ((const char *) data + pos, data_len, NULL))
+            return g_strndup ((const char *) data + pos, data_len);
+          pos += data_len;
+        }
+    }
+#undef NEED
+  return NULL;
+}
+
+static void
+apple_receive_pasteboard (rfbClient *cl)
+{
+  guint8 header[15];
+  guint32 uncompressed, compressed;
+  g_autofree guint8 *in = NULL;
+  g_autofree guint8 *out = NULL;
+  g_autofree char *text = NULL;
+  z_stream zs = { 0 };
+  int status;
+
+  if (!ReadFromRFBServer (cl, (char *) header, sizeof header))
+    return;
+  uncompressed = read_u32 (header + 7);
+  compressed = read_u32 (header + 11);
+  if (compressed > APPLE_MAX_ARCHIVE || uncompressed > APPLE_MAX_ARCHIVE)
+    return;
+  in = g_malloc (MAX (compressed, 1));
+  if (!ReadFromRFBServer (cl, (char *) in, compressed))
+    return;
+
+  out = g_malloc (MAX (uncompressed, 1));
+  if (inflateInit (&zs) != Z_OK)
+    return;
+  zs.next_in = in;
+  zs.avail_in = compressed;
+  zs.next_out = out;
+  zs.avail_out = uncompressed;
+  /* The Mac sync-flushes the stream rather than ending it. */
+  status = inflate (&zs, Z_SYNC_FLUSH);
+  inflateEnd (&zs);
+  if (status != Z_OK && status != Z_STREAM_END && status != Z_BUF_ERROR)
+    return;
+
+  g_debug ("VNC: received a %u-byte Mac pasteboard", uncompressed);
+  text = apple_archive_text (out, zs.total_out);
+  if (text != NULL)
+    dr_session_push_clipboard (DR_SESSION (SELF (cl)), text);
+}
+
+static rfbBool
+apple_handle_message (rfbClient *cl, rfbServerToClientMsg *message)
+{
+  DrVncSession *self = SELF (cl);
+
+  if (self == NULL || !self->apple)
+    return FALSE;
+
+  switch (message->type)
+    {
+    case APPLE_MISC_STATUS:
+      {
+        guint8 rest[7];
+
+        if (!ReadFromRFBServer (cl, (char *) rest, sizeof rest))
+          return FALSE;
+        if (((rest[5] << 8) | rest[6]) == APPLE_PASTEBOARD_CHANGED)
+          {
+            const guint8 fetch[8] = { 0x0b, 0, 0, 0, 0, 0, 0, 1 };
+            WriteToRFBServer (cl, (const char *) fetch, sizeof fetch);
+          }
+        return TRUE;
+      }
+
+    case APPLE_PASTEBOARD:
+      apple_receive_pasteboard (cl);
+      return TRUE;
+
+    default:
+      return FALSE;
+    }
+}
+
+static rfbClientProtocolExtension apple_extension = {
+  .handleMessage = apple_handle_message,
+};
+
+static void
+apple_send_pasteboard (rfbClient *cl, const char *text)
+{
+  g_autoptr (GByteArray) archive = g_byte_array_new ();
+  g_autoptr (GByteArray) msg = g_byte_array_new ();
+  gsize len = strlen (text);
+  z_stream zs = { 0 };
+  guint8 *out;
+  gsize bound;
+  const guint8 type[4] = { APPLE_PASTEBOARD, 0, 0, 0 };
+
+  /* One item with one text flavor; an item with no flavors clears the pasteboard. */
+  if (len == 0)
+    write_u32 (archive, 0);
+  else
+    {
+      write_u32 (archive, 1);
+      write_u32 (archive, strlen (APPLE_TEXT_FLAVOR));
+      g_byte_array_append (archive, (const guint8 *) APPLE_TEXT_FLAVOR, strlen (APPLE_TEXT_FLAVOR));
+      write_u32 (archive, 0); /* reserved */
+      write_u32 (archive, 0); /* no tags */
+      write_u32 (archive, len);
+      g_byte_array_append (archive, (const guint8 *) text, len);
+    }
+
+  if (deflateInit (&zs, Z_DEFAULT_COMPRESSION) != Z_OK)
+    return;
+  bound = deflateBound (&zs, archive->len) + 64;
+  out = g_malloc (bound);
+  zs.next_in = archive->data;
+  zs.avail_in = archive->len;
+  zs.next_out = out;
+  zs.avail_out = bound;
+  deflate (&zs, Z_SYNC_FLUSH);
+  deflateEnd (&zs);
+
+  g_byte_array_append (msg, type, sizeof type);
+  write_u32 (msg, 1); /* the Mac ignores this word */
+  write_u32 (msg, archive->len);
+  write_u32 (msg, zs.total_out);
+  g_byte_array_append (msg, out, zs.total_out);
+  g_free (out);
+  WriteToRFBServer (cl, (const char *) msg->data, msg->len);
+}
 
 static void
 send_clipboard (rfbClient *cl, const char *text)
 {
   g_autofree char *latin1 = NULL;
   gsize len = 0;
+
+  g_debug ("VNC: sending %zu bytes of clipboard text", strlen (text));
+  if (SELF (cl)->apple)
+    {
+      apple_send_pasteboard (cl, text);
+      return;
+    }
 
 #ifdef HAVE_VNC_UTF8_CLIPBOARD
   if (SendClientCutTextUTF8 (cl, (char *) text, strlen (text)))
@@ -331,6 +571,9 @@ dr_vnc_session_run (DrSession *session, GError **error)
     }
 
   self->client = cl;
+  self->apple = cl->authScheme == rfbARD;
+  if (self->apple)
+    apple_start (cl);
   dr_session_notify_connected (session);
 
   while (!dr_session_should_stop (session))
@@ -380,6 +623,7 @@ dr_vnc_session_class_init (DrVncSessionClass *klass)
 
   rfbClientLog = vnc_log;
   rfbClientErr = vnc_error;
+  rfbClientRegisterExtension (&apple_extension);
 }
 
 static void

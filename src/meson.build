@@ -6,6 +6,7 @@ deps = [
   dependency('winpr3', version: '>= 3.5'),
   dependency('libvncclient', version: '>= 0.9.14'),
   dependency('libsecret-1'),
+  dependency('zlib'),
 ]
 
 # UTF-8 clipboard arrived in libvncclient 0.9.15; older ones only do Latin-1.
